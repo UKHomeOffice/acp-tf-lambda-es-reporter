@@ -5,6 +5,7 @@ from elasticsearch import Elasticsearch, Urllib3HttpConnection
 from elasticsearch_dsl import Search
 from elasticsearch_dsl import Q
 import operator
+import os
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -14,7 +15,7 @@ class Notifier:
 
     def __init__(self,
                  account,
-                 sns_topic_prefix,
+                 sns_topic_arn,
                  es_host,
                  es_user,
                  es_password,
@@ -23,9 +24,10 @@ class Notifier:
                  tag_selector_key='k8s.io/cluster-autoscaler/node-template/label/PROJECT-SERVICE',
                  region='eu-west-2'):
 
+        self.es_host = es_host
         self.region = region
         self.account = account
-        self.sns_topic_prefix = sns_topic_prefix
+        self.sns_topic_arn = sns_topic_arn
         self.tag_selector_value = tag_selector_value
         self.frequency = frequency
         self.tag_selector_key = tag_selector_key
@@ -49,11 +51,13 @@ class Notifier:
         s = Search(using=self.es_client, index="journald-*").query(q).\
             filter('range',
                    **{'@timestamp': {'gte': f"now-{self.frequency}", 'lt': 'now'}}).\
-            sort('@timestamp')[0:200]
+            sort('@timestamp')[0:10000]
+
+        logging.info(f"Searching {self.es_host} from now-{self.frequency} to now for ssh events")
 
         response = s.execute(ignore_cache=True)
 
-        logging.info(f"found {len(response)} events in elasticsearch")
+        logging.info(f"Found {len(response)} shh events in {self.es_host}")
 
         return response
 
@@ -61,7 +65,7 @@ class Notifier:
     def get_instance_from_private_dns_name(self, private_dns_name, client):
 
         instance_response = client.describe_instances(DryRun=False,
-                                                          Filters=[{
+                                                      Filters=[{
                                                               'Name': 'private-dns-name',
                                                               'Values': [private_dns_name]}])
 
@@ -74,6 +78,8 @@ class Notifier:
             instance = dict(name=tags_unpacked['Name'],
                             id=instance_response['Reservations'][0]['Instances'][0]['InstanceId'],
                             az=instance_response['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone'],
+                            private_ip=instance_response['Reservations'][0]['Instances'][0]['PrivateIpAddress'],
+                            subnet=instance_response['Reservations'][0]['Instances'][0]['PrivateIpAddress'],
                             launch_time=instance_response['Reservations'][0]['Instances'][0]['LaunchTime'],
                             hostname=instance_response['Reservations'][0]['Instances'][0]['PrivateDnsName'],
                             tags=tags_unpacked)
@@ -87,25 +93,31 @@ class Notifier:
 
     def compare_instance_service_with_selector(self, instance):
 
+        logging.info(f"Checking instance {instance['hostname']} for chosen tag selector - "
+                     f"{self.tag_selector_key}:{self.tag_selector_value}")
+
         if self.tag_selector_key in instance['tags']:
             instance[self.tag_selector_key] = instance['tags'][self.tag_selector_key]
         else:
-            logging.info(f"Skipping {instance['hostname']} because it has no {self.tag_selector_key} tag "
-                         f"found keys: {instance['tags'].keys()}")
+            logging.info(f"Skipping {instance['hostname']} because it has no {self.tag_selector_key} tag key")
             return False
 
-        logging.info(f"Found '{self.tag_selector_key}' tag value '{instance[self.tag_selector_key]}' applied to {instance['hostname']}")
+        logging.info(f"Instance {instance['hostname']} labelled with tag key '{self.tag_selector_key}' and value "
+                     f"'{instance[self.tag_selector_key]}'")
 
         if instance[self.tag_selector_key] == self.tag_selector_value:
-            logging.info(f"'{instance[self.tag_selector_key]}' tag applied to {instance['hostname']} matches "
-                         f"chosen tag selector: '{self.tag_selector_value}'")
+            logging.info(f"Instance {instance['hostname']} tag:key "
+                         f"'{self.tag_selector_key}':'{instance[self.tag_selector_key]}' "
+                         f"matches chosen selector")
             return True
         else:
-            logging.info(f"'{instance[self.tag_selector_key]}' tag applied to {instance['hostname']} does not match "
-                         f"chosen tag selector: '{self.tag_selector_value}'")
+            logging.info(f"Instance {instance['hostname']} tag:key '{self.tag_selector_key}':'{instance[self.tag_selector_key]}' "
+                         f"does not match chosen tag selector")
             return False
 
     def parse_logs(self, response):
+
+        logging.info(f"Checking each ssh event's node name against AWS API to obtain instance tags")
 
         ec2_client = self.session.client('ec2')
 
@@ -125,78 +137,79 @@ class Notifier:
 
         return project_service_events
 
-    def format_notification(self, events):
+    def format_events(self, events):
 
         events.sort(key=operator.itemgetter('hostname', 'log_event_timestamp'))
 
-        a = ''
+        logging.info(f"Found {len(events)} qualifying events")
 
         for event in events:
-            for k,v in event.items():
-                a = a + '\n'.join(f"{k} : {v}")
-            a = a + '---\n'
+            logging.info(f"Found qualifying event: {event}")
 
-        print(a)
+        events_formatted = []
 
-        # string = """
-        # The following SSH events were detected into EC2 instances tagged with the following Key : Value combination
-        #
-        # {key} : {value}
-        # ---
-        #
-        # {events}
-        # """.format(key=self.tag_selector_key,
-        #            value=self.tag_selector_value,
-        #            events='\n'.join(f"{k} : {v}" for e in events for k,v in e.items()))
-        #
-        # print(string)
+        for event in events:
+            formatted = '----\n'+'\n'.join(f"{k}: {v}" for k,v in event.items())+'\n'
+            events_formatted.append(formatted)
 
-        # def trigger_sns(self, events, topic_arn):
-        #
-        #     sns_client = boto3.client('sns')
-        #
-        #     sns_client.publish(TopicArn=topic_arn,
-        #                        Subject='ACP Cloud Health Alert',
-        #                        Message=event)
+        return events_formatted
 
 
+    def prepare_messages(self, events_formatted):
+
+        header_string = f"""
+The following SSH events in {self.es_host} were detected from EC2 instances tagged with the following Key : Value combination
+
+{self.tag_selector_key} : {self.tag_selector_value}
+
+"""
+        message_array = []
+        message_string = header_string
+        for event in events_formatted:
+            #  SNS messages must be under 256KB, or 262,144 bytes
+            if len(message_string.encode('utf-8')) + len(event.encode('utf-8')) <= 262144:
+                message_string = message_string + event
+            else:
+                message_array.append(message_string)
+                message_string = header_string
+                continue
+
+        message_array.append(message_string)
+
+        logging.info(f"{len(events_formatted)} events split into {len(message_array)} SNS messages: "
+                     f"{[str(len(m.encode('utf-8')))+' bytes' for m in message_array]}")
+
+        return message_array
+
+    def trigger_sns(self, messages, topic_arn):
+
+        sns_client = self.session.client('sns')
+
+        for index,message in enumerate(messages):
+            logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} bytes")
+            sns_client.publish(TopicArn=topic_arn,
+                               Subject='ACP Node SSH Alert',
+                               Message=message)
 
 
+def main(event):
 
+    notifier = Notifier(region=os.environ['AWS_REGION'],
+                        account=os.environ['AWS_ACCOUNT'],
+                        sns_topic_arn=os.environ['SNS_TOPIC_ARN'],
+                        es_host=os.environ['ELASTICSEARCH_HOSTNAME'],
+                        es_user=os.environ['ELASTICSEARCH_USERNAME'],
+                        es_password=os.environ['ELASTICSEARCH_PASSWORD'],
+                        tag_selector_key=os.environ['TAG_SELECTOR_KEY'],
+                        tag_selector_value=os.environ['TAG_SELECTOR_VALUE'],
+                        frequency=os.environ['FREQUENCY'])
 
+    ssh_event_logs = notifier.get_logs()
 
+    parsed_logs = notifier.parse_logs(ssh_event_logs)
 
+    formatted_events = notifier.format_events(parsed_logs)
 
-if __name__ == '__main__':
-    n = Notifier(region='eu-west-2',
-                 account='670930646103',
-                 sns_topic_prefix='a',
-                 es_host='https://elasticsearch.testing.acp.homeoffice.gov.uk',
-                 es_user='elastic',
-                 es_password='chang3m3',
-                 tag_selector_value='test.testing.acp.homeoffice.gov.uk',
-                 frequency='8h',
-                 tag_selector_key='KubernetesCluster')
+    message_array = notifier.prepare_messages(formatted_events)
 
-    a = n.get_logs()
-
-    if a:
-        b = n.parse_logs(a)
-        print(b)
-
-    n.format_notification(b)
-
-    #
-    # for i in a:
-    #     print(i.message, getattr(i, '@timestamp'))
-
-# def main(event):
-#
-#     notifier = Notifier(region=os.environ['AWS_REGION'],
-#                         account=os.environ['AWS_ACCOUNT'],
-#                         sns_topic_prefix=os.environ['SNS_TOPIC_PREFIX'],
-#                         es_host=os.environ['ELASTICSEARCH_HOSTNAME'],
-#                         es_user=os.environ['ELASTICSEARCH_USERNAME'],
-#                         es_password=os.environ['ELASTICSEARCH_PASSWORD'])
-#
-#     notifier.process_event(event)
+    notifier.trigger_sns(message_array, notifier.sns_topic_arn)
