@@ -20,9 +20,9 @@ class Notifier:
                  es_user,
                  es_password,
                  tag_selector_value,
-                 frequency='15m',
-                 tag_selector_key='k8s.io/cluster-autoscaler/node-template/label/PROJECT-SERVICE',
-                 region='eu-west-2'):
+                 frequency,
+                 tag_selector_key,
+                 region):
 
         self.es_host = es_host
         self.region = region
@@ -79,7 +79,7 @@ class Notifier:
                             id=instance_response['Reservations'][0]['Instances'][0]['InstanceId'],
                             az=instance_response['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone'],
                             private_ip=instance_response['Reservations'][0]['Instances'][0]['PrivateIpAddress'],
-                            subnet=instance_response['Reservations'][0]['Instances'][0]['PrivateIpAddress'],
+                            subnet=instance_response['Reservations'][0]['Instances'][0]['SubnetId'],
                             launch_time=instance_response['Reservations'][0]['Instances'][0]['LaunchTime'],
                             hostname=instance_response['Reservations'][0]['Instances'][0]['PrivateDnsName'],
                             tags=tags_unpacked)
@@ -158,7 +158,7 @@ class Notifier:
     def prepare_messages(self, events_formatted):
 
         header_string = f"""
-The following SSH events in {self.es_host} were detected from EC2 instances tagged with the following Key : Value combination
+The following SSH events logged in {self.es_host} were detected from EC2 instances tagged with the following Key : Value combination
 
 {self.tag_selector_key} : {self.tag_selector_value}
 

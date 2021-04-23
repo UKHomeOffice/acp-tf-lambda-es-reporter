@@ -49,7 +49,7 @@ data "aws_iam_policy_document" "acp_health_notifier_policy_document" {
     ] 
 
     resources = [
-      "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:aws-health_*",
+      "arn:aws:sns:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:*",
     ]
   }
 
