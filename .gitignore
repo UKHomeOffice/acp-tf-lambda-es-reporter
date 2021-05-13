@@ -3,5 +3,3 @@ venv/
 .idea/
 *.pyc
 .terraform/
-lambda/**/
-six.py

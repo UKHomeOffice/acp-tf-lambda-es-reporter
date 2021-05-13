@@ -128,6 +128,3 @@ class TestNotifierCheckESIssue(NotifierTestCase):
 
             mock_boto_client.describe_instances.assert_called_once()
 
-
-
-
