@@ -4,17 +4,6 @@ data "archive_file" "lambda_zip" {
   source_dir  = "${path.module}/lambda/"
 }
 
-resource "null_resource" "install" {
-  triggers = {
-    always_run = base64sha256(file("${path.module}/lambda/notifier.py"))
-  }
-
-  provisioner "local-exec" {
-    working_dir = "${path.module}/lambda"
-    command     = "docker run -v $(pwd):/tmp/ python:3.9.2 pip3 install -r /tmp/requirements.txt --upgrade --target /tmp/"
-  }
-}
-
 data "aws_ssm_parameter" "elasticsearch_password" {
   name            = var.elasticsearch_password_parameter_name
   with_decryption = true
@@ -30,7 +19,7 @@ resource "aws_lambda_function" "lambda" {
 
   runtime = "python3.8"
 
-  memory_size = 128
+  memory_size = 256
 
   role = aws_iam_role.lambda_role.arn
 
@@ -51,9 +40,6 @@ resource "aws_lambda_function" "lambda" {
     }
   }
 
-  depends_on = [
-    null_resource.install
-  ]
 
   vpc_config {
     subnet_ids         = var.subnet_ids
