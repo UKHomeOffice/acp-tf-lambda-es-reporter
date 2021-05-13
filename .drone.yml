@@ -12,4 +12,5 @@ steps:
   image: python:3.9.2
   commands:
   - cd lambda/
+  - pip3 install boto3
   - python -m unittest test-notifier.py
