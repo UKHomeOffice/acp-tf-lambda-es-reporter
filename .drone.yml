@@ -13,4 +13,5 @@ steps:
   commands:
   - cd lambda/
   - pip3 install boto3
+  - pip3 install -r requirements.txt
   - python -m unittest test-notifier.py
