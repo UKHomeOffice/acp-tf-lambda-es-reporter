@@ -11,4 +11,5 @@ steps:
 - name: run_tests
   image: python:3.9.2
   commands:
+  - cd lambda
   - python -m unittest lambda/test-notifier.py
