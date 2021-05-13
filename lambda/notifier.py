@@ -67,6 +67,7 @@ The notifier lambda with the following parameters
 ES host: {self.es_host}
 Account: {self.account}
 Region: {self.region}
+Lambda Name: {os.getenv('AWS_LAMBDA_FUNCTION_NAME')}
 Query: {self.query_string}
 Query UTC Time Window: {self.previous_timestamp}  ->  {self.current_timestamp}
 Index pattern: {self.index_pattern}
