@@ -1,0 +1,14 @@
+---
+kind: pipeline
+name: default
+type: kubernetes
+
+platform:
+  os: linux
+  arch: amd64
+
+steps:
+- name: run_tests
+  image: python:3.9.2
+  commands:
+  - python -m unittest lambda/test-notifier.py
