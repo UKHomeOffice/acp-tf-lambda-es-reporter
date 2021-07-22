@@ -30,7 +30,9 @@ class Notifier:
                  tag_selector_key,
                  region,
                  query_string,
-                 index_pattern):
+                 index_pattern,
+                 should_check_ec2s,
+                 period_event_threshold):
 
         self.es_host = es_host
         self.region = region
@@ -41,6 +43,8 @@ class Notifier:
         self.tag_selector_key = tag_selector_key
         self.query_string = query_string
         self.index_pattern = index_pattern
+        self.should_check_ec2s = (should_check_ec2s == 'TRUE')
+        self.period_event_threshold = int(period_event_threshold)
 
         self.es_client = Elasticsearch([es_host],
                                         connection_class=Urllib3HttpConnection,
@@ -289,16 +293,25 @@ def main(event, context):
                         tag_selector_value=os.environ['TAG_SELECTOR_VALUE'],
                         period_minutes=os.environ['PERIOD_MINUTES'],
                         query_string=os.environ['QUERY_STRING'],
-                        index_pattern=os.environ['INDEX_PATTERN'])
+                        index_pattern=os.environ['INDEX_PATTERN'],
+                        should_check_ec2s=os.environ['SHOULD_CHECK_EC2S'],
+                        period_event_threshold=os.environ['PERIOD_EVENT_THRESHOLD'])
 
     ssh_event_logs = notifier.check_es_issue()
 
-    if ssh_event_logs:
+    if ssh_event_logs and notifier.should_check_ec2s:
         parsed_logs = notifier.parse_logs(ssh_event_logs)
 
         if parsed_logs:
             formatted_events = notifier.format_events(parsed_logs)
 
-            message_array = notifier.prepare_messages(formatted_events)
+    if not formatted_events:
+        formatted_events = ssh_event_logs
+    
+    message_array = notifier.prepare_messages(formatted_events)
 
+    if notifier.should_check_ec2s: 
+        notifier.trigger_sns(message_array)
+    else:
+        if len(message_array) >= notifier.period_event_threshold:
             notifier.trigger_sns(message_array)

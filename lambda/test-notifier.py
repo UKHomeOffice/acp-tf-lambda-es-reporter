@@ -19,7 +19,9 @@ class NotifierTestCase(unittest.TestCase):
                                 tag_selector_value='value',
                                 period_minutes='1',
                                 query_string='syslog_identifier: sshd',
-                                index_pattern='*')
+                                index_pattern='*',
+                                should_check_ec2s='TRUE',
+                                period_event_threshold='0')
 
         self.notifier.previous_timestamp = '1066-10-14T10:11:12.999999Z'
 
