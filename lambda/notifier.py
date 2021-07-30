@@ -171,7 +171,6 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
         else:
             tags_unpacked = {tag['Key']: tag['Value'] for tag in
                              instance_response['Reservations'][0]['Instances'][0]['Tags']}
-
             instance = dict(name=tags_unpacked['Name'],
                             id=instance_response['Reservations'][0]['Instances'][0]['InstanceId'],
                             az=instance_response['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone'],
@@ -216,12 +215,12 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
         logging.info(f"Checking each event's node name against AWS API to obtain instance tags")
 
         ec2_client = self.session.client('ec2')
-
         project_service_events = []
 
         for log in response:
             logging.info(f"Searching for instance with PrivateDnsName {log.hostname} - event message: {log.message}")
             instance = self.get_instance_from_private_dns_name(log.hostname, ec2_client)
+
             if not instance:
                 continue
 
@@ -280,6 +279,31 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
                                Subject='ACP Node Alert',
                                Message=message)
 
+    def run(self):
+
+        ssh_event_logs = self.check_es_issue()
+        formatted_events = None
+
+        if ssh_event_logs and self.should_check_ec2s:
+            parsed_logs = self.parse_logs(ssh_event_logs)
+
+            if parsed_logs:
+                formatted_events = self.format_events(parsed_logs)
+
+        if not formatted_events:
+            formatted_events = ssh_event_logs
+
+        message_array = self.prepare_messages(formatted_events)
+
+        if self.period_event_threshold:
+
+            if (len(formatted_events) >= self.period_event_threshold):
+                self.trigger_sns(message_array)
+            else:
+                pass
+        else:
+            self.trigger_sns(message_array)
+
 
 def main(event, context):
 
@@ -297,21 +321,4 @@ def main(event, context):
                         should_check_ec2s=os.environ['SHOULD_CHECK_EC2S'],
                         period_event_threshold=os.environ['PERIOD_EVENT_THRESHOLD'])
 
-    ssh_event_logs = notifier.check_es_issue()
-
-    if ssh_event_logs and notifier.should_check_ec2s:
-        parsed_logs = notifier.parse_logs(ssh_event_logs)
-
-        if parsed_logs:
-            formatted_events = notifier.format_events(parsed_logs)
-
-    if not formatted_events:
-        formatted_events = ssh_event_logs
-    
-    message_array = notifier.prepare_messages(formatted_events)
-
-    if notifier.should_check_ec2s: 
-        notifier.trigger_sns(message_array)
-    else:
-        if len(message_array) >= notifier.period_event_threshold:
-            notifier.trigger_sns(message_array)
+    notifier.run()
