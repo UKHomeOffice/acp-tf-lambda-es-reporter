@@ -54,6 +54,14 @@ variable "email_targets" {
   type = set(string)
 }
 
+variable "should_check_ec2s" {
+  default = "TRUE"
+}
+
+variable "period_event_threshold" {
+  default = "1"
+}
+
 variable "tags" {
   
 }
