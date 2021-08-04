@@ -23,7 +23,7 @@ variable "tag_selector_key" {
 }
 
 variable "tag_selector_value" {
-
+  default = ""
 }
 
 variable "period_minutes" {
