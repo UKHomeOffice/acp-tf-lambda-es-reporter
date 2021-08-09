@@ -2,6 +2,7 @@ import unittest
 from notifier import Notifier
 from unittest import mock
 import socket
+import datetime as dt
 
 class NotifierTestCase(unittest.TestCase):
     @mock.patch('boto3.Session.client')
@@ -18,8 +19,9 @@ class NotifierTestCase(unittest.TestCase):
                                 period_minutes='1',
                                 query_string='syslog_identifier: sshd',
                                 index_pattern='*',
-                                should_check_ec2s='TRUE',
-                                period_event_threshold='0')
+                                check_ec2='TRUE',
+                                period_event_threshold='0',
+                                query_delay_minutes=0)
 
         self.notifier.previous_timestamp = '1066-10-14T10:11:12.999999Z'
 
@@ -48,7 +50,7 @@ class NotifierTestCase(unittest.TestCase):
                             },
                             "SubnetId": "subnet-82a5c1f9",
                             "VpcId": "vpc-da3c49b3",
-                            "LaunchTime": self.notifier.current_timestamp,
+                            "LaunchTime": dt.datetime(1066, 1, 1, 1, 1, 1, 111111),
                             "Tags": [
                                 {
                                     "Key": "Name",
@@ -124,7 +126,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
 
         instance = self.notifier.get_instance_from_private_dns_name('a', mock_boto_client)
 
-        self.assertTrue(instance['launch_time'] == self.notifier.current_timestamp,
+        self.assertTrue(instance['launch_time'] == dt.datetime(1066, 1, 1, 1, 1, 1, 111111).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                         instance['name'] == 'test')
 
         mock_boto_client.describe_instances.assert_called_once()
@@ -149,24 +151,24 @@ class TestNotifierCheckESIssue(NotifierTestCase):
 
         mock_trigger_sns.assert_called_once()
 
-    @mock.patch('notifier.Notifier.trigger_sns')
+    @mock.patch('notifier.Notifier.prepare_messages')
     @mock.patch('boto3.Session.client')
     @mock.patch('elasticsearch_dsl.Search.execute')
     def test_when_threshold_set_and_not_met(self,
                                     mock_es_search,
                                     mock_ec2_client_ctor,
-                                    mock_trigger_sns):
+                                    mock_prepare_messages):
 
         self.notifier.period_event_threshold = 3
         mock_es_result = mock.MagicMock(hostname='mock.dns.name')
         mock_es_search.return_value = [mock_es_result, mock_es_result]
-        mock_ec2_client_intance = mock.MagicMock()
-        mock_ec2_client_ctor.return_value = mock_ec2_client_intance
-        mock_ec2_client_intance.describe_instances.return_value = self.mock_ec2_client_response
+        mock_ec2_client_instance = mock.MagicMock()
+        mock_ec2_client_ctor.return_value = mock_ec2_client_instance
+        mock_ec2_client_instance.describe_instances.return_value = self.mock_ec2_client_response
 
         self.notifier.run()
 
-        mock_trigger_sns.assert_not_called()
+        mock_prepare_messages.assert_not_called()
 
     @mock.patch('notifier.Notifier.trigger_sns')
     @mock.patch('boto3.Session.client')
@@ -195,12 +197,12 @@ class TestNotifierCheckESIssue(NotifierTestCase):
                                     mock_ec2_client_ctor,
                                     mock_trigger_sns):
 
-        self.notifier.period_event_threshold = None
+        self.notifier.period_event_threshold = 1
         mock_es_result = mock.MagicMock(hostname='mock.dns.name')
         mock_es_search.return_value = [mock_es_result, mock_es_result]
-        mock_ec2_client_intance = mock.MagicMock()
-        mock_ec2_client_ctor.return_value = mock_ec2_client_intance
-        mock_ec2_client_intance.describe_instances.return_value = self.mock_ec2_client_response
+        mock_ec2_client_instance = mock.MagicMock()
+        mock_ec2_client_ctor.return_value = mock_ec2_client_instance
+        mock_ec2_client_instance.describe_instances.return_value = self.mock_ec2_client_response
 
         self.notifier.run()
 
@@ -214,12 +216,12 @@ class TestNotifierCheckESIssue(NotifierTestCase):
                                     mock_ec2_client_ctor,
                                     mock_trigger_sns):
 
-        self.notifier.should_check_ec2s = False
+        self.notifier.check_ec2 = False
         self.notifier.period_event_threshold = None
         mock_es_result = mock.MagicMock(hostname='mock.dns.name')
         mock_es_search.return_value = [mock_es_result, mock_es_result]
-        mock_ec2_client_intance = mock.MagicMock()
+        mock_ec2_client_instance = mock.MagicMock()
 
         self.notifier.run()
 
-        mock_ec2_client_intance.assert_not_called()
+        mock_ec2_client_instance.assert_not_called()

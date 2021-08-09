@@ -2,10 +2,6 @@ variable "function_name" {
   default = "ssh-notifier"
 }
 
-variable "schedule_expression" {
-  default = "rate(5 minutes)"
-}
-
 variable "elasticsearch_password_parameter_name" {
   default = "ssh_notifier_elasticsearch_password"
 }
@@ -19,7 +15,7 @@ variable "elasticsearch_hostname" {
 }
 
 variable "tag_selector_key" {
-  default = "k8s.io/cluster-autoscaler/node-template/label/PROJECT-SERVICE"
+  default = ""
 }
 
 variable "tag_selector_value" {
@@ -31,11 +27,11 @@ variable "period_minutes" {
 }
 
 variable "query_string" {
-  
+
 }
 
 variable "index_pattern" {
-  
+
 }
 
 variable "timeout" {
@@ -43,23 +39,27 @@ variable "timeout" {
 }
 
 variable "subnet_ids" {
-  
+
 }
 
 variable "vpc_id" {
-  
+
 }
 
 variable "email_targets" {
   type = set(string)
 }
 
-variable "should_check_ec2s" {
-  default = "TRUE"
+variable "check_ec2" {
+  type = string
 }
 
 variable "period_event_threshold" {
-  default = "1"
+  type = number
+}
+
+variable query_delay_minutes {
+  default = 15
 }
 
 variable "tags" {
