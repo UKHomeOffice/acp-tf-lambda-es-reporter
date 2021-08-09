@@ -18,23 +18,27 @@ Example instantiation:
 
 ```
 module "ssh_notifier_lambda" {
-  source = "git::https://github.com/UKHomeOffice/acp-tf-lambda-es-reporter?ref=v0.1.1"
+  source = "git::https://github.com/UKHomeOffice/acp-tf-lambda-es-reporter?ref=v0.1.3"
 
-  function_name = "test-func"
-  tag_selector_key = "KubernetesCluster"
-  tag_selector_value = "test.testing.acp.homeoffice.gov.uk"
-  period_minutes = "5"
-  schedule_expression = "rate(5 minutes)"
-  elasticsearch_hostname = "elasticsearch.testing.acp.homeoffice.gov.uk"
-  elasticsearch_username = "lambda_read_only"
+  function_name                         = "test-${var.environment}-ssh-notifier"
+  check_ec2                             = "TRUE"
+  period_event_threshold                = 1
+  query_delay_minutes                   = 0
+  tag_selector_key                      = "KubernetesCluster"
+  tag_selector_value                    = "test.testing.acp.homeoffice.gov.uk"
+  period_minutes                        = "5"
+  elasticsearch_hostname                = "elasticsearch.testing.acp.homeoffice.gov.uk"
+  elasticsearch_username                = "lambda_read_only"
   elasticsearch_password_parameter_name = "ssh_notifier_elasticsearch_password"
-  email_targets = ["willem.veerman@appvia.io"]
-  vpc_id = "vpc-aaa"
-  subnet_ids = ["subnet-aaa", "subnet-bbb", "subnet-ccc"]
-  query_string = "syslog_identifier: sshd"
-  index_pattern = "journald-*"
+  email_targets                         = ["willem.veerman@appvia.io"]
+  vpc_id                                = var.vpc_id
+  subnet_ids                            = data.aws_subnet_ids.private.ids
+  query_string                          = "syslog_identifier: sshd"
+  index_pattern                         = "journald-acp-test-*"
   tags = {
-    "CreatedBy" = "willem.veerman@appvia.io"
+    TYPE        = var.environment
+    ENVIRONMENT = "test"
   }
 }
+
 ```
