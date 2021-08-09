@@ -1,7 +1,11 @@
+locals {
+  schedule_expression = "rate(${var.period_minutes} minutes)"
+}
+
 resource "aws_cloudwatch_event_rule" "schedule" {
   name                = "${var.function_name}-schedule"
   description         = "${var.function_name} trigger schedule"
-  schedule_expression = var.schedule_expression
+  schedule_expression = local.schedule_expression
 }
 
 resource "aws_cloudwatch_event_target" "lambda_target" {

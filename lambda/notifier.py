@@ -7,10 +7,12 @@ from elasticsearch import Elasticsearch, Urllib3HttpConnection
 from elasticsearch.exceptions import ConnectionError as ElasticConnectionError, ElasticsearchException
 from elasticsearch_dsl import Search
 from elasticsearch_dsl import Q
+from elasticsearch_dsl.utils import AttrDict
 import operator
 import os
 import socket
 from urllib3.exceptions import HTTPError
+import json
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -30,7 +32,10 @@ class Notifier:
                  tag_selector_key,
                  region,
                  query_string,
-                 index_pattern):
+                 index_pattern,
+                 check_ec2,
+                 period_event_threshold,
+                 query_delay_minutes):
 
         self.es_host = es_host
         self.region = region
@@ -41,6 +46,9 @@ class Notifier:
         self.tag_selector_key = tag_selector_key
         self.query_string = query_string
         self.index_pattern = index_pattern
+        self.check_ec2 = (check_ec2 == 'TRUE')
+        self.period_event_threshold = int(period_event_threshold)
+        self.query_delay_minutes = int(query_delay_minutes)
 
         self.es_client = Elasticsearch([es_host],
                                         connection_class=Urllib3HttpConnection,
@@ -57,9 +65,9 @@ class Notifier:
 
         self.ssm_client = self.session.client('ssm')
 
-        self.previous_timestamp = self.get_past_timestamp(self.ssm_client)
+        self.current_timestamp = (dt.datetime.utcnow() - dt.timedelta(minutes=self.query_delay_minutes)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
-        self.current_timestamp = dt.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        self.previous_timestamp = self.get_past_timestamp(self.ssm_client)
 
         self.header = f"""
 The notifier lambda with the following parameters
@@ -68,10 +76,14 @@ ES host: {self.es_host}
 Account: {self.account}
 Region: {self.region}
 Lambda Name: {os.getenv('AWS_LAMBDA_FUNCTION_NAME')}
-Query: {self.query_string}
+Query: '{self.query_string}'
 Query UTC Time Window: {self.previous_timestamp}  ->  {self.current_timestamp}
-Index pattern: {self.index_pattern}
-Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
+Query Delay Minutes: {self.query_delay_minutes}
+Index pattern: '{self.index_pattern}'
+Event Threshold Trigger Count: {self.period_event_threshold}
+Cross-Check Events Against EC2 Toggle: {self.check_ec2}
+EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_value}'
+
 
 """
 
@@ -80,7 +92,7 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
         try:
             past_timestamp = ssm_client.get_parameter(Name=f"{os.getenv('AWS_LAMBDA_FUNCTION_NAME')}_timestamp")['Parameter']['Value']
         except ClientError as e:
-            now = dt.datetime.utcnow() - dt.timedelta(minutes=int(self.period_minutes))
+            now = dt.datetime.utcnow() - dt.timedelta(minutes=int(self.period_minutes + self.query_delay_minutes))
             past_timestamp = now.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
             if e.response['Error']['Code'] == 'ParameterNotFound':
                 logging.error(f"Parameter {os.getenv('AWS_LAMBDA_FUNCTION_NAME')}_timestamp not found in {self.account}"
@@ -117,11 +129,14 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
         s = Search(using=self.es_client, index=self.index_pattern).query(q).\
             filter('range',
                    **{'@timestamp': {'gt': gt, 'lte': lte}}).\
-            sort('@timestamp')[0:]
+            sort('@timestamp')
 
         logging.info(f"Searching {self.es_host} from {gt} to {lte} for '{self.query_string}' events")
 
-        response = s.execute(ignore_cache=True)
+        response = []
+
+        for hit in s.scan():
+            response.append(hit)
 
         return response
 
@@ -132,7 +147,7 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
         events = []
 
         try:
-            events = self.get_logs(self.previous_timestamp, self.current_timestamp)
+            events = self.get_logs(gt=self.previous_timestamp, lte=self.current_timestamp)
         except (socket.timeout, socket.gaierror, HTTPError, ElasticConnectionError) as e:
             message = f"Connection error for host {self.es_host} - {e}"
             logging.error(message)
@@ -167,13 +182,12 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
         else:
             tags_unpacked = {tag['Key']: tag['Value'] for tag in
                              instance_response['Reservations'][0]['Instances'][0]['Tags']}
-
             instance = dict(name=tags_unpacked['Name'],
                             id=instance_response['Reservations'][0]['Instances'][0]['InstanceId'],
                             az=instance_response['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone'],
                             private_ip=instance_response['Reservations'][0]['Instances'][0]['PrivateIpAddress'],
                             subnet=instance_response['Reservations'][0]['Instances'][0]['SubnetId'],
-                            launch_time=instance_response['Reservations'][0]['Instances'][0]['LaunchTime'],
+                            launch_time=instance_response['Reservations'][0]['Instances'][0]['LaunchTime'].strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                             hostname=instance_response['Reservations'][0]['Instances'][0]['PrivateDnsName'],
                             tags=tags_unpacked)
 
@@ -185,13 +199,13 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
 
     def compare_instance_service_with_selector(self, instance):
 
-        logging.info(f"Checking instance {instance['hostname']} for chosen tag selector - "
-                     f"{self.tag_selector_key}:{self.tag_selector_value}")
+        logging.info(f"Checking instance {instance['hostname']} for chosen tag 'Key':'Value' combination - "
+                     f"'{self.tag_selector_key}':'{self.tag_selector_value}'")
 
         if self.tag_selector_key in instance['tags']:
             instance[self.tag_selector_key] = instance['tags'][self.tag_selector_key]
         else:
-            logging.info(f"Skipping {instance['hostname']} because it has no {self.tag_selector_key} tag key")
+            logging.info(f"Skipping {instance['hostname']} because it has no '{self.tag_selector_key}' tag key")
             return False
 
         logging.info(f"Instance {instance['hostname']} labelled with tag key '{self.tag_selector_key}' and value "
@@ -213,33 +227,47 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
 
         ec2_client = self.session.client('ec2')
 
-        project_service_events = []
+        matching_logs = []
 
         for log in response:
-            logging.info(f"Searching for instance with PrivateDnsName {log.hostname} - event message: {log.message}")
-            instance = self.get_instance_from_private_dns_name(log.hostname, ec2_client)
-            if not instance:
-                continue
+            if getattr(log, 'hostname', None):
+                logging.info(f"Searching for instance with PrivateDnsName {log.hostname} - event message: {log.message}")
+                instance = self.get_instance_from_private_dns_name(log.hostname, ec2_client)
 
-            if self.compare_instance_service_with_selector(instance):
-                instance['log_message'] = log.message
-                instance['log_event_timestamp'] = getattr(log, '@timestamp')
-                project_service_events.append(instance)
+                if instance:
+                    if self.compare_instance_service_with_selector(instance):
+                        setattr(log, 'ec2_details', instance)
+                        matching_logs.append(log)
+            else:
+                logging.info(f"{log} has not hostname field, skipping")
 
-        return project_service_events
+        return matching_logs
 
     def format_events(self, events):
 
-        events.sort(key=operator.itemgetter('hostname', 'log_event_timestamp'))
+        if self.check_ec2:
+            events.sort(key=operator.itemgetter('hostname', '@timestamp'))
+        else:
+            list(events).sort(key=operator.itemgetter('@timestamp'))
 
         logging.info(f"Found {len(events)} qualifying events")
 
         events_formatted = []
 
-        for event in events:
+        for index, event in enumerate(events):
             logging.info(f"Found qualifying event: {event}")
-            formatted = '----\n'+'\n'.join(f"{k}: {v}" for k,v in event.items())+'\n'
-            events_formatted.append(formatted)
+            formatted_list = []
+            for attribute in event:
+                if type(getattr(event, attribute)) == AttrDict:
+                    attr = f"{attribute}: {json.dumps(getattr(event, attribute).to_dict(), sort_keys=True, indent=4)}"
+                else:
+                    attr = f"{attribute}: " + str(getattr(event, attribute))
+                formatted_list.append(attr + '\n')
+            formatted_list.sort()
+            formatted_log_entry = f"\n----\nevent {index+1} of {len(events)}\n"
+            for item in formatted_list:
+                formatted_log_entry += item
+            events_formatted.append(formatted_log_entry)
 
         return events_formatted
 
@@ -273,8 +301,23 @@ Key : Value tag selector: {self.tag_selector_key} : {self.tag_selector_value}
         for index, message in enumerate(messages):
             logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} bytes")
             sns_client.publish(TopicArn=self.sns_topic_arn,
-                               Subject='ACP Node Alert',
+                               Subject=f"ACP Elasticsearch Event Alert: message {index+1} of {len(messages)}",
                                Message=message)
+
+    def run(self):
+
+        ssh_event_logs = self.check_es_issue()
+
+        if ssh_event_logs:
+            if self.check_ec2:
+                parsed_logs = self.parse_logs(ssh_event_logs)
+                formatted_events = self.format_events(parsed_logs)
+            else:
+                formatted_events = self.format_events(ssh_event_logs)
+
+            if len(formatted_events) >= self.period_event_threshold:
+                message_array = self.prepare_messages(formatted_events)
+                self.trigger_sns(message_array)
 
 
 def main(event, context):
@@ -289,16 +332,9 @@ def main(event, context):
                         tag_selector_value=os.environ['TAG_SELECTOR_VALUE'],
                         period_minutes=os.environ['PERIOD_MINUTES'],
                         query_string=os.environ['QUERY_STRING'],
-                        index_pattern=os.environ['INDEX_PATTERN'])
+                        index_pattern=os.environ['INDEX_PATTERN'],
+                        check_ec2=os.environ['CHECK_EC2'],
+                        period_event_threshold=os.environ['PERIOD_EVENT_THRESHOLD'],
+                        query_delay_minutes=os.environ['QUERY_DELAY_MINUTES'])
 
-    ssh_event_logs = notifier.check_es_issue()
-
-    if ssh_event_logs:
-        parsed_logs = notifier.parse_logs(ssh_event_logs)
-
-        if parsed_logs:
-            formatted_events = notifier.format_events(parsed_logs)
-
-            message_array = notifier.prepare_messages(formatted_events)
-
-            notifier.trigger_sns(message_array)
+    notifier.run()

@@ -37,6 +37,9 @@ resource "aws_lambda_function" "lambda" {
       PERIOD_MINUTES         = var.period_minutes
       QUERY_STRING           = var.query_string
       INDEX_PATTERN          = var.index_pattern
+      CHECK_EC2              = var.check_ec2
+      PERIOD_EVENT_THRESHOLD = var.period_event_threshold
+      QUERY_DELAY_MINUTES    = var.query_delay_minutes
     }
   }
 
