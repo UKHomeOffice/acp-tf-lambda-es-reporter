@@ -65,3 +65,11 @@ variable query_delay_minutes {
 variable "tags" {
   
 }
+
+variable "slack_webhook" {
+
+}
+
+variable "channel_name" {
+  
+}

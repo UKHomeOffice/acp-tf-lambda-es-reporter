@@ -40,7 +40,9 @@ resource "aws_lambda_function" "lambda" {
       CHECK_EC2              = var.check_ec2
       PERIOD_EVENT_THRESHOLD = var.period_event_threshold
       QUERY_DELAY_MINUTES    = var.query_delay_minutes
-    }
+      SLACK_WEBHOOK          = var.slack_webhook
+      CHANNEL_NAME           = var.channel_name
+    } 
   }
 
 

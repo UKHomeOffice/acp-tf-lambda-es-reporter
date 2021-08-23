@@ -21,7 +21,10 @@ class NotifierTestCase(unittest.TestCase):
                                 index_pattern='*',
                                 check_ec2='TRUE',
                                 period_event_threshold='0',
-                                query_delay_minutes=0)
+                                query_delay_minutes=0,
+                                slack_webhook = "dummy-webhook",
+                                channel_name = "dummy-channel" 
+                                )
 
         self.notifier.previous_timestamp = '1066-10-14T10:11:12.999999Z'
 

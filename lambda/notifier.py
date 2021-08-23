@@ -11,8 +11,12 @@ from elasticsearch_dsl.utils import AttrDict
 import operator
 import os
 import socket
+import urllib3
 from urllib3.exceptions import HTTPError
 import json
+
+
+http = urllib3.PoolManager()
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -35,7 +39,9 @@ class Notifier:
                  index_pattern,
                  check_ec2,
                  period_event_threshold,
-                 query_delay_minutes):
+                 query_delay_minutes,
+                 slack_webhook,
+                 channel_name):
 
         self.es_host = es_host
         self.region = region
@@ -49,6 +55,8 @@ class Notifier:
         self.check_ec2 = (check_ec2 == 'TRUE')
         self.period_event_threshold = int(period_event_threshold)
         self.query_delay_minutes = int(query_delay_minutes)
+        self.slack_webhook = slack_webhook
+        self.channel_name = channel_name
 
         self.es_client = Elasticsearch([es_host],
                                         connection_class=Urllib3HttpConnection,
@@ -304,6 +312,26 @@ EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_val
                                Subject=f"ACP Elasticsearch Event Alert: message {index+1} of {len(messages)}",
                                Message=message)
 
+    def trigger_slack(self):
+
+        # sns_client = self.session.client('sns')
+        # logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} bytes")
+        url = self.slack_webhook
+        msg = {
+            "channel": self.channel_name,
+            # "username": self.webhook_username,
+            "text": event['Records'][0]['Sns']['Message']
+        } 
+
+        encoded_message = json.dumps(msg).encode('utf-8')
+
+        resp = http.request('POST',url, body=encoded_message)
+        print({
+            "message": event['Records'][0]['Sns']['Message'], 
+            "status_code": resp.status, 
+            "response": resp.data
+        })
+
     def run(self):
 
         ssh_event_logs = self.check_es_issue()
@@ -335,6 +363,8 @@ def main(event, context):
                         index_pattern=os.environ['INDEX_PATTERN'],
                         check_ec2=os.environ['CHECK_EC2'],
                         period_event_threshold=os.environ['PERIOD_EVENT_THRESHOLD'],
-                        query_delay_minutes=os.environ['QUERY_DELAY_MINUTES'])
-
+                        query_delay_minutes=os.environ['QUERY_DELAY_MINUTES'],
+                        slack_webhook = os.environ['SLACK_WEBHOOK'],
+                        channel_name = os.environ['CHANNEL_NAME'])
+                    
     notifier.run()
