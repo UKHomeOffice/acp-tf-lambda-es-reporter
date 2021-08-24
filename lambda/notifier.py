@@ -317,24 +317,24 @@ Slack Webhook Username: '{self.slack_webhook_username}'
 
     def trigger_slack(self,messages):
 
-        # sns_client = self.session.client('sns')
-        # logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} bytes")
         url = self.slack_webhook
         
         for index, message in enumerate(messages):
 
             msg = {
-                "channel": self.channel_name,
-                "username": self.webhook_username,
+                "channel": self.slack_channel_name,
+                "username": self.slack_webhook_username,
                 "text": message
             } 
 
             encoded_message = json.dumps(msg).encode('utf-8')
 
-            logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} characters")
+            logging.info(f"Publishing message {index+1} of {len(messages)} to Slack channel {self.slack_channel_name} - {len(message.encode('utf-8'))} characters")
             logging.debug(f"Message {index+1} body: {message}")
+
             resp = http.request('POST',url, body=encoded_message)
-            logging.info(f"Recieved response code: {resp.status} body: {resp.data} for message:  {index+1}")
+            
+            logging.info(f"Received response code: {resp.status} body: {resp.data} for message:  {index+1}")
             
 
     def run(self):
@@ -355,7 +355,7 @@ Slack Webhook Username: '{self.slack_webhook_username}'
                     sns_message_array = self.prepare_messages(formatted_events, character_limit=262144)
                     self.trigger_sns(sns_message_array)
                 
-                if self.slack_webhook:
+                if self.slack_webhook and self.slack_channel_name:
                     #  SNS messages must be under 40000 characters
                     slack_message_array = self.prepare_messages(formatted_events, character_limit=40000)
                     self.trigger_slack(slack_message_array)

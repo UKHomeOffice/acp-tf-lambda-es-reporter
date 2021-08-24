@@ -67,13 +67,13 @@ variable "tags" {
 }
 
 variable "slack_webhook" {
-
+  default = ""
 }
 
 variable "slack_channel_name" {
-  
+  default = ""
 }
 
 variable "slack_webhook_username" {
-  
+  default = ""
 }
