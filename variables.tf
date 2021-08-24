@@ -70,6 +70,10 @@ variable "slack_webhook" {
 
 }
 
-variable "channel_name" {
+variable "slack_channel_name" {
+  
+}
+
+variable "slack_webhook_username" {
   
 }

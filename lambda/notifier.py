@@ -41,7 +41,8 @@ class Notifier:
                  period_event_threshold,
                  query_delay_minutes,
                  slack_webhook,
-                 channel_name):
+                 slack_channel_name,
+                 slack_webhook_username):
 
         self.es_host = es_host
         self.region = region
@@ -56,7 +57,8 @@ class Notifier:
         self.period_event_threshold = int(period_event_threshold)
         self.query_delay_minutes = int(query_delay_minutes)
         self.slack_webhook = slack_webhook
-        self.channel_name = channel_name
+        self.slack_channel_name = slack_channel_name
+        self.slack_webhook_username = slack_webhook_username
 
         self.es_client = Elasticsearch([es_host],
                                         connection_class=Urllib3HttpConnection,
@@ -91,6 +93,8 @@ Index pattern: '{self.index_pattern}'
 Event Threshold Trigger Count: {self.period_event_threshold}
 Cross-Check Events Against EC2 Toggle: {self.check_ec2}
 EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_value}'
+Slack Channel Name: '{self.slack_channel_name}'
+Slack Webhook Username: '{self.slack_webhook_username}'
 
 
 """
@@ -279,7 +283,7 @@ EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_val
 
         return events_formatted
 
-    def prepare_messages(self, events_formatted):
+    def prepare_messages(self, events_formatted,character_limit):
 
         event_header = self.header + f"detected {len(events_formatted)} events:\n"
 
@@ -287,8 +291,7 @@ EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_val
         if events_formatted:
             message_string = event_header
             for event in events_formatted:
-                #  SNS messages must be under 256KB, or 262,144 bytes
-                if len(message_string.encode('utf-8')) + len(event.encode('utf-8')) <= 262144:
+                if len(message_string.encode('utf-8')) + len(event.encode('utf-8')) <= character_limit:
                     message_string = message_string + event
                 else:
                     message_array.append(message_string)
@@ -312,25 +315,27 @@ EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_val
                                Subject=f"ACP Elasticsearch Event Alert: message {index+1} of {len(messages)}",
                                Message=message)
 
-    def trigger_slack(self):
+    def trigger_slack(self,messages):
 
         # sns_client = self.session.client('sns')
         # logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} bytes")
         url = self.slack_webhook
-        msg = {
-            "channel": self.channel_name,
-            # "username": self.webhook_username,
-            "text": event['Records'][0]['Sns']['Message']
-        } 
+        
+        for index, message in enumerate(messages):
 
-        encoded_message = json.dumps(msg).encode('utf-8')
+            msg = {
+                "channel": self.channel_name,
+                "username": self.webhook_username,
+                "text": message
+            } 
 
-        resp = http.request('POST',url, body=encoded_message)
-        print({
-            "message": event['Records'][0]['Sns']['Message'], 
-            "status_code": resp.status, 
-            "response": resp.data
-        })
+            encoded_message = json.dumps(msg).encode('utf-8')
+
+            logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} characters")
+            logging.debug(f"Message {index+1} body: {message}")
+            resp = http.request('POST',url, body=encoded_message)
+            logging.info(f"Recieved response code: {resp.status} body: {resp.data} for message:  {index+1}")
+            
 
     def run(self):
 
@@ -344,8 +349,16 @@ EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_val
                 formatted_events = self.format_events(ssh_event_logs)
 
             if len(formatted_events) >= self.period_event_threshold:
-                message_array = self.prepare_messages(formatted_events)
-                self.trigger_sns(message_array)
+                
+                if self.sns_topic_arn: 
+                    #  SNS messages must be under 256KB, or 262,144 bytes
+                    sns_message_array = self.prepare_messages(formatted_events, character_limit=262144)
+                    self.trigger_sns(sns_message_array)
+                
+                if self.slack_webhook:
+                    #  SNS messages must be under 40000 characters
+                    slack_message_array = self.prepare_messages(formatted_events, character_limit=40000)
+                    self.trigger_slack(slack_message_array)
 
 
 def main(event, context):
@@ -365,6 +378,7 @@ def main(event, context):
                         period_event_threshold=os.environ['PERIOD_EVENT_THRESHOLD'],
                         query_delay_minutes=os.environ['QUERY_DELAY_MINUTES'],
                         slack_webhook = os.environ['SLACK_WEBHOOK'],
-                        channel_name = os.environ['CHANNEL_NAME'])
+                        slack_channel_name = os.environ['SLACK_CHANNEL_NAME'],
+                        slack_webhook_username = os.environ['SLACK_WEBHOOK_USERNAME'])
                     
     notifier.run()

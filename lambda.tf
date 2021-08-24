@@ -41,7 +41,8 @@ resource "aws_lambda_function" "lambda" {
       PERIOD_EVENT_THRESHOLD = var.period_event_threshold
       QUERY_DELAY_MINUTES    = var.query_delay_minutes
       SLACK_WEBHOOK          = var.slack_webhook
-      CHANNEL_NAME           = var.channel_name
+      SLACK_CHANNEL_NAME     = var.slack_channel_name
+      SLACK_WEBHOOK_USERNAME = var.slack_webhook_username
     } 
   }
 
