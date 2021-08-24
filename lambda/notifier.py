@@ -104,7 +104,7 @@ Slack Webhook Username: '{self.slack_webhook_username}'
         try:
             past_timestamp = ssm_client.get_parameter(Name=f"{os.getenv('AWS_LAMBDA_FUNCTION_NAME')}_timestamp")['Parameter']['Value']
         except ClientError as e:
-            now = dt.datetime.utcnow() - dt.timedelta(minutes=int(self.period_minutes + self.query_delay_minutes))
+            now = dt.datetime.utcnow() - dt.timedelta(minutes=int(self.period_minutes) + int(self.query_delay_minutes))
             past_timestamp = now.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
             if e.response['Error']['Code'] == 'ParameterNotFound':
                 logging.error(f"Parameter {os.getenv('AWS_LAMBDA_FUNCTION_NAME')}_timestamp not found in {self.account}"
