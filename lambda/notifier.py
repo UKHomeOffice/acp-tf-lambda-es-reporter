@@ -292,10 +292,10 @@ Slack Webhook Username: '{self.slack_webhook_username}'
             message_string = event_header
             for event in events_formatted:
                 if len(message_string.encode('utf-8')) + len(event.encode('utf-8')) <= character_limit:
-                    message_string = message_string + event
+                    message_string = '`' + message_string + event + '`'
                 else:
                     message_array.append(message_string)
-                    message_string = event_header + event
+                    message_string = '`' + event_header + event + '`'
                     continue
 
             message_array.append(message_string)
