@@ -14,6 +14,11 @@ import socket
 import urllib3
 from urllib3.exceptions import HTTPError
 import json
+from slack_sdk import WebClient
+
+token = os.environ['SLACK_BOT_TOKEN']
+
+slack_client = WebClient(token=token)
 
 
 http = urllib3.PoolManager()
@@ -292,10 +297,10 @@ Slack Webhook Username: '{self.slack_webhook_username}'
             message_string = event_header
             for event in events_formatted:
                 if len(message_string.encode('utf-8')) + len(event.encode('utf-8')) <= character_limit:
-                    message_string = '`' + message_string + event + '`'
+                    message_string = message_string + event
                 else:
                     message_array.append(message_string)
-                    message_string = '`' + event_header + event + '`'
+                    message_string = event_header + event
                     continue
 
             message_array.append(message_string)
@@ -331,11 +336,22 @@ Slack Webhook Username: '{self.slack_webhook_username}'
 
             logging.info(f"Publishing message {index+1} of {len(messages)} to Slack channel {self.slack_channel_name} - {len(message.encode('utf-8'))} characters")
             logging.debug(f"Message {index+1} body: {message}")
+            file_name = f"log-file-{index+1}.json"
 
-            resp = http.request('POST',url, body=encoded_message)
+            f = open(file_name, "x")
+            f.write(encoded_message)
+            f.close()
             
-            logging.info(f"Received response code: {resp.status} body: {resp.data} for message:  {index+1}")
+            slack_client.files.upload(
+                token = token,
+                channels = [self.slack_channel_name],
+                file = file_name,
+                filetype = "javascript",
+                initial_comment = 'ALERT :rotating_light:',
+                title = 'POD-EXEC'
+            )
             
+            logging.info(f"Uploaded file to {self.slack_channel_name} channel for message:  {index+1}")
 
     def run(self):
 
