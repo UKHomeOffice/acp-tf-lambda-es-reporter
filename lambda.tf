@@ -9,6 +9,11 @@ data "aws_ssm_parameter" "elasticsearch_password" {
   with_decryption = true
 }
 
+data "aws_ssm_parameter" "slack_password" {
+  name            = var.slack_password_parameter_name
+  with_decryption = true
+}
+
 resource "aws_lambda_function" "lambda" {
   filename         = data.archive_file.lambda_zip.output_path
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
@@ -43,6 +48,7 @@ resource "aws_lambda_function" "lambda" {
       SLACK_WEBHOOK          = var.slack_webhook
       SLACK_CHANNEL_NAME     = var.slack_channel_name
       SLACK_WEBHOOK_USERNAME = var.slack_webhook_username
+      SLACK_BOT_TOKEN        = data.aws_ssm_parameter.slack_password.value
     } 
   }
 
