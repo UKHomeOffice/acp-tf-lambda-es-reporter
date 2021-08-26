@@ -14,12 +14,7 @@ import socket
 import urllib3
 from urllib3.exceptions import HTTPError
 import json
-from slack_sdk import WebClient
-
-token = os.environ['SLACK_BOT_TOKEN']
-
-slack_client = WebClient(token=token)
-
+import requests
 
 http = urllib3.PoolManager()
 
@@ -45,9 +40,8 @@ class Notifier:
                  check_ec2,
                  period_event_threshold,
                  query_delay_minutes,
-                 slack_webhook,
-                 slack_channel_name,
-                 slack_webhook_username):
+                 slack_password,
+                 slack_channel_name):
 
         self.es_host = es_host
         self.region = region
@@ -61,9 +55,9 @@ class Notifier:
         self.check_ec2 = (check_ec2 == 'TRUE')
         self.period_event_threshold = int(period_event_threshold)
         self.query_delay_minutes = int(query_delay_minutes)
-        self.slack_webhook = slack_webhook
+        self.slack_password = slack_password
         self.slack_channel_name = slack_channel_name
-        self.slack_webhook_username = slack_webhook_username
+
 
         self.es_client = Elasticsearch([es_host],
                                         connection_class=Urllib3HttpConnection,
@@ -99,7 +93,7 @@ Event Threshold Trigger Count: {self.period_event_threshold}
 Cross-Check Events Against EC2 Toggle: {self.check_ec2}
 EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_value}'
 Slack Channel Name: '{self.slack_channel_name}'
-Slack Webhook Username: '{self.slack_webhook_username}'
+
 
 
 """
@@ -321,14 +315,11 @@ Slack Webhook Username: '{self.slack_webhook_username}'
                                Message=message)
 
     def trigger_slack(self,messages):
-
-        url = self.slack_webhook
         
         for index, message in enumerate(messages):
 
             msg = {
                 "channel": self.slack_channel_name,
-                "username": self.slack_webhook_username,
                 "text": message
             } 
 
@@ -336,21 +327,26 @@ Slack Webhook Username: '{self.slack_webhook_username}'
 
             logging.info(f"Publishing message {index+1} of {len(messages)} to Slack channel {self.slack_channel_name} - {len(message.encode('utf-8'))} characters")
             logging.debug(f"Message {index+1} body: {message}")
-            file_name = f"log-file-{index+1}.json"
+            file_name = f"/tmp/log-file-{index+1}.json"
 
-            f = open(file_name, "x")
+            f = open(file_name, "w")
             f.write(encoded_message)
             f.close()
+
+            my_file = {
+                'file' : (f'{file_name}', open(f'{file_name}', 'rb'), 'json') 
+                }
+
+            payload = {
+                "channels": [self.slack_channel_name],
+                "filetype": "javascript",
+                "initial_comment": 'ALERT :rotating_light:',
+                "title": 'POD-EXEC'
+            }
             
-            slack_client.files.upload(
-                token = token,
-                channels = [self.slack_channel_name],
-                file = file_name,
-                filetype = "javascript",
-                initial_comment = 'ALERT :rotating_light:',
-                title = 'POD-EXEC'
-            )
-            
+            requests.post("https://slack.com/api/files.upload", params=payload, files=my_file, auth=(slack_password))
+
+
             logging.info(f"Uploaded file to {self.slack_channel_name} channel for message:  {index+1}")
 
     def run(self):
@@ -371,7 +367,7 @@ Slack Webhook Username: '{self.slack_webhook_username}'
                     sns_message_array = self.prepare_messages(formatted_events, character_limit=262144)
                     self.trigger_sns(sns_message_array)
                 
-                if self.slack_webhook and self.slack_channel_name:
+                if self.slack_channel_name:
                     #  SNS messages must be under 40000 characters
                     slack_message_array = self.prepare_messages(formatted_events, character_limit=40000)
                     self.trigger_slack(slack_message_array)
@@ -393,8 +389,7 @@ def main(event, context):
                         check_ec2=os.environ['CHECK_EC2'],
                         period_event_threshold=os.environ['PERIOD_EVENT_THRESHOLD'],
                         query_delay_minutes=os.environ['QUERY_DELAY_MINUTES'],
-                        slack_webhook = os.environ['SLACK_WEBHOOK'],
                         slack_channel_name = os.environ['SLACK_CHANNEL_NAME'],
-                        slack_webhook_username = os.environ['SLACK_WEBHOOK_USERNAME'])
+                        slack_password = os.environ['SLACK_BOT_TOKEN'])
                     
     notifier.run()

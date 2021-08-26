@@ -30,6 +30,7 @@ module "ssh_notifier_lambda" {
   elasticsearch_hostname                = "elasticsearch.testing.acp.homeoffice.gov.uk"
   elasticsearch_username                = "lambda_read_only"
   elasticsearch_password_parameter_name = "ssh_notifier_elasticsearch_password"
+  slack_password_parameter_name         = "pod_exec_alert_slack_bot_password"
   email_targets                         = ["willem.veerman@appvia.io"]
   vpc_id                                = var.vpc_id
   subnet_ids                            = data.aws_subnet_ids.private.ids
