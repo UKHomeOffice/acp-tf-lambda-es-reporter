@@ -285,22 +285,20 @@ Slack Channel ID: '{self.slack_channel_id}'
 
     def prepare_messages(self, header, events_formatted, character_limit):
 
-        event_header = header + f"detected {len(events_formatted)} events:\n"
-
         message_array = []
         if events_formatted:
-            message_string = event_header
+            message_string = header
             for event in events_formatted:
                 if len(message_string.encode('utf-8')) + len(event.encode('utf-8')) <= character_limit:
                     message_string = message_string + event
                 else:
                     message_array.append(message_string)
-                    message_string = event_header + event
+                    message_string = header + event
                     continue
 
             message_array.append(message_string)
 
-            logging.info(f"{len(events_formatted)} events split into {len(message_array)} SNS messages: "
+            logging.info(f"{len(events_formatted)} events split into {len(message_array)} messages: "
                          f"{[str(len(m.encode('utf-8'))) + ' bytes' for m in message_array]}")
 
         return message_array
@@ -334,7 +332,7 @@ Slack Channel ID: '{self.slack_channel_id}'
             initial_comment += header
 
             payload = {
-                "channels": [self.slack_channel_id],
+                "channels": f"{self.slack_channel_id}",
                 "filetype": "javascript",
                 "initial_comment": initial_comment,
                 "title": 'ELASTICSEARCH EVENT DATA',
