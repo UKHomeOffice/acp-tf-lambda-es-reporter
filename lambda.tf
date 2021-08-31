@@ -16,7 +16,7 @@ data "aws_ssm_parameter" "slack_password" {
 
 resource "aws_lambda_function" "lambda" {
   filename         = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  source_code_hash = filebase64sha256(data.archive_file.lambda_zip.output_path)
 
   function_name = var.function_name
 
