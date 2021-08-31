@@ -14,9 +14,6 @@ import socket
 import urllib3
 from urllib3.exceptions import HTTPError
 import json
-import requests
-
-http = urllib3.PoolManager()
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -41,7 +38,7 @@ class Notifier:
                  period_event_threshold,
                  query_delay_minutes,
                  slack_password,
-                 slack_channel_name):
+                 slack_channel_id):
 
         self.es_host = es_host
         self.region = region
@@ -56,25 +53,25 @@ class Notifier:
         self.period_event_threshold = int(period_event_threshold)
         self.query_delay_minutes = int(query_delay_minutes)
         self.slack_password = slack_password
-        self.slack_channel_name = slack_channel_name
-
+        self.slack_channel_id = slack_channel_id
 
         self.es_client = Elasticsearch([es_host],
-                                        connection_class=Urllib3HttpConnection,
-                                        http_auth=(es_user, es_password),
-                                        scheme="https",
-                                        use_ssl=True,
-                                        verify_certs=False,
-                                        ssl_show_warn=False,
-                                        port=443,
-                                        timeout=10,
-                                        max_retries=2)
+                                       connection_class=Urllib3HttpConnection,
+                                       http_auth=(es_user, es_password),
+                                       scheme="https",
+                                       use_ssl=True,
+                                       verify_certs=False,
+                                       ssl_show_warn=False,
+                                       port=443,
+                                       timeout=10,
+                                       max_retries=2)
 
         self.session = boto3.Session(region_name=self.region)
 
         self.ssm_client = self.session.client('ssm')
 
-        self.current_timestamp = (dt.datetime.utcnow() - dt.timedelta(minutes=self.query_delay_minutes)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        self.current_timestamp = (dt.datetime.utcnow() - dt.timedelta(minutes=self.query_delay_minutes)).strftime(
+            '%Y-%m-%dT%H:%M:%S.%fZ')
 
         self.previous_timestamp = self.get_past_timestamp(self.ssm_client)
 
@@ -92,7 +89,7 @@ Index pattern: '{self.index_pattern}'
 Event Threshold Trigger Count: {self.period_event_threshold}
 Cross-Check Events Against EC2 Toggle: {self.check_ec2}
 EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_value}'
-Slack Channel Name: '{self.slack_channel_name}'
+Slack Channel ID: '{self.slack_channel_id}'
 
 
 
@@ -101,7 +98,8 @@ Slack Channel Name: '{self.slack_channel_name}'
     def get_past_timestamp(self, ssm_client):
 
         try:
-            past_timestamp = ssm_client.get_parameter(Name=f"{os.getenv('AWS_LAMBDA_FUNCTION_NAME')}_timestamp")['Parameter']['Value']
+            past_timestamp = \
+            ssm_client.get_parameter(Name=f"{os.getenv('AWS_LAMBDA_FUNCTION_NAME')}_timestamp")['Parameter']['Value']
         except ClientError as e:
             now = dt.datetime.utcnow() - dt.timedelta(minutes=int(self.period_minutes) + int(self.query_delay_minutes))
             past_timestamp = now.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
@@ -137,9 +135,9 @@ Slack Channel Name: '{self.slack_channel_name}'
 
         q = Q("query_string", query=self.query_string)
 
-        s = Search(using=self.es_client, index=self.index_pattern).query(q).\
+        s = Search(using=self.es_client, index=self.index_pattern).query(q). \
             filter('range',
-                   **{'@timestamp': {'gt': gt, 'lte': lte}}).\
+                   **{'@timestamp': {'gt': gt, 'lte': lte}}). \
             sort('@timestamp')
 
         logging.info(f"Searching {self.es_host} from {gt} to {lte} for '{self.query_string}' events")
@@ -185,8 +183,8 @@ Slack Channel Name: '{self.slack_channel_name}'
 
         instance_response = client.describe_instances(DryRun=False,
                                                       Filters=[{
-                                                              'Name': 'private-dns-name',
-                                                              'Values': [private_dns_name]}])
+                                                          'Name': 'private-dns-name',
+                                                          'Values': [private_dns_name]}])
 
         if not instance_response['Reservations']:
             logging.error(f"No corresponding ec2 was found for {private_dns_name}")
@@ -198,7 +196,8 @@ Slack Channel Name: '{self.slack_channel_name}'
                             az=instance_response['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone'],
                             private_ip=instance_response['Reservations'][0]['Instances'][0]['PrivateIpAddress'],
                             subnet=instance_response['Reservations'][0]['Instances'][0]['SubnetId'],
-                            launch_time=instance_response['Reservations'][0]['Instances'][0]['LaunchTime'].strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                            launch_time=instance_response['Reservations'][0]['Instances'][0]['LaunchTime'].strftime(
+                                '%Y-%m-%dT%H:%M:%S.%fZ'),
                             hostname=instance_response['Reservations'][0]['Instances'][0]['PrivateDnsName'],
                             tags=tags_unpacked)
 
@@ -228,8 +227,9 @@ Slack Channel Name: '{self.slack_channel_name}'
                          f"matches chosen selector")
             return True
         else:
-            logging.info(f"Instance {instance['hostname']} tag:key '{self.tag_selector_key}':'{instance[self.tag_selector_key]}' "
-                         f"does not match chosen tag selector")
+            logging.info(
+                f"Instance {instance['hostname']} tag:key '{self.tag_selector_key}':'{instance[self.tag_selector_key]}' "
+                f"does not match chosen tag selector")
             return False
 
     def parse_logs(self, response):
@@ -242,7 +242,8 @@ Slack Channel Name: '{self.slack_channel_name}'
 
         for log in response:
             if getattr(log, 'hostname', None):
-                logging.info(f"Searching for instance with PrivateDnsName {log.hostname} - event message: {log.message}")
+                logging.info(
+                    f"Searching for instance with PrivateDnsName {log.hostname} - event message: {log.message}")
                 instance = self.get_instance_from_private_dns_name(log.hostname, ec2_client)
 
                 if instance:
@@ -275,16 +276,16 @@ Slack Channel Name: '{self.slack_channel_name}'
                     attr = f"{attribute}: " + str(getattr(event, attribute))
                 formatted_list.append(attr + '\n')
             formatted_list.sort()
-            formatted_log_entry = f"\n----\nevent {index+1} of {len(events)}\n"
+            formatted_log_entry = f"\n----\nevent {index + 1} of {len(events)}\n"
             for item in formatted_list:
                 formatted_log_entry += item
             events_formatted.append(formatted_log_entry)
 
         return events_formatted
 
-    def prepare_messages(self, events_formatted,character_limit):
+    def prepare_messages(self, header, events_formatted, character_limit):
 
-        event_header = self.header + f"detected {len(events_formatted)} events:\n"
+        event_header = header + f"detected {len(events_formatted)} events:\n"
 
         message_array = []
         if events_formatted:
@@ -300,7 +301,7 @@ Slack Channel Name: '{self.slack_channel_name}'
             message_array.append(message_string)
 
             logging.info(f"{len(events_formatted)} events split into {len(message_array)} SNS messages: "
-                         f"{[str(len(m.encode('utf-8')))+' bytes' for m in message_array]}")
+                         f"{[str(len(m.encode('utf-8'))) + ' bytes' for m in message_array]}")
 
         return message_array
 
@@ -309,45 +310,48 @@ Slack Channel Name: '{self.slack_channel_name}'
         sns_client = self.session.client('sns')
 
         for index, message in enumerate(messages):
-            logging.info(f"Publishing message {index+1} of {len(messages)} - {len(message.encode('utf-8'))} bytes")
+            logging.info(f"Publishing message {index + 1} of {len(messages)} - {len(message.encode('utf-8'))} bytes")
             sns_client.publish(TopicArn=self.sns_topic_arn,
-                               Subject=f"ACP Elasticsearch Event Alert: message {index+1} of {len(messages)}",
+                               Subject=f"ACP Elasticsearch Event Alert: message {index + 1} of {len(messages)}",
                                Message=message)
 
-    def trigger_slack(self,messages):
-        
+    def trigger_slack(self, messages, header):
+
+        http = urllib3.PoolManager()
+
         for index, message in enumerate(messages):
+            logging.info(
+                f"Publishing message {index+1} of {len(messages)} to Slack channel {self.slack_channel_id}")
+            logging.debug(f"Message {index+1} = {len(message.encode('utf-8'))} characters")
+            logging.debug(f"Message {index+1} content: {message}")
 
-            msg = {
-                "channel": self.slack_channel_name,
-                "text": message
-            } 
+            message_as_bytes = json.dumps(message).encode('utf-8')
 
-            encoded_message = json.dumps(msg).encode('utf-8')
+            auth = {'Authorization': f"Bearer {self.slack_password}"}
 
-            logging.info(f"Publishing message {index+1} of {len(messages)} to Slack channel {self.slack_channel_name} - {len(message.encode('utf-8'))} characters")
-            logging.debug(f"Message {index+1} body: {message}")
-            file_name = f"/tmp/log-file-{index+1}.json"
+            initial_comment = ':rotating_light: ALERT :rotating_light:\n\n'
 
-            f = open(file_name, "w")
-            f.write(encoded_message)
-            f.close()
-
-            my_file = {
-                'file' : (f'{file_name}', open(f'{file_name}', 'rb'), 'json') 
-                }
+            initial_comment += header
 
             payload = {
-                "channels": [self.slack_channel_name],
+                "channels": [self.slack_channel_id],
                 "filetype": "javascript",
-                "initial_comment": 'ALERT :rotating_light:',
-                "title": 'POD-EXEC'
+                "initial_comment": initial_comment,
+                "title": 'ELASTICSEARCH EVENT DATA',
+                "file": ("LOG EVENTS", message_as_bytes, 'json')
             }
-            
-            requests.post("https://slack.com/api/files.upload", params=payload, files=my_file, auth=(slack_password))
 
+            req = http.request('POST',
+                               'https://slack.com/api/files.upload',
+                               headers=auth,
+                               fields=payload)
 
-            logging.info(f"Uploaded file to {self.slack_channel_name} channel for message:  {index+1}")
+            response_body = json.loads(req.data)
+
+            if req.status != 200 and response_body['ok'] is not True:
+                logging.error(f"Slack returned code {req.status} and response: {response_body}")
+            else:
+                logging.info(f"Uploaded file to {self.slack_channel_id} channel for message: {index+1}")
 
     def run(self):
 
@@ -360,21 +364,29 @@ Slack Channel Name: '{self.slack_channel_name}'
             else:
                 formatted_events = self.format_events(ssh_event_logs)
 
-            if len(formatted_events) >= self.period_event_threshold:
-                
-                if self.sns_topic_arn: 
+            number_of_events = len(formatted_events)
+
+            if number_of_events >= self.period_event_threshold:
+
+                header = self.header + f"detected {number_of_events} events:\n"
+
+                if self.sns_topic_arn:
                     #  SNS messages must be under 256KB, or 262,144 bytes
-                    sns_message_array = self.prepare_messages(formatted_events, character_limit=262144)
+                    sns_message_array = self.prepare_messages(header=header,
+                                                              events_formatted=formatted_events,
+                                                              character_limit=262144)
                     self.trigger_sns(sns_message_array)
-                
-                if self.slack_channel_name:
-                    #  SNS messages must be under 40000 characters
-                    slack_message_array = self.prepare_messages(formatted_events, character_limit=40000)
-                    self.trigger_slack(slack_message_array)
+
+                if self.slack_channel_id:
+                    #  Slack file upload API has a 1MB limit
+                    slack_message_array = self.prepare_messages(header='',
+                                                                events_formatted=formatted_events,
+                                                                character_limit=1000000)
+                    self.trigger_slack(messages=slack_message_array,
+                                       header=header)
 
 
 def main(event, context):
-
     notifier = Notifier(region=os.environ['AWS_REGION'],
                         account=os.environ['AWS_ACCOUNT'],
                         sns_topic_arn=os.environ['SNS_TOPIC_ARN'],
@@ -389,7 +401,7 @@ def main(event, context):
                         check_ec2=os.environ['CHECK_EC2'],
                         period_event_threshold=os.environ['PERIOD_EVENT_THRESHOLD'],
                         query_delay_minutes=os.environ['QUERY_DELAY_MINUTES'],
-                        slack_channel_name = os.environ['SLACK_CHANNEL_NAME'],
-                        slack_password = os.environ['SLACK_BOT_TOKEN'])
-                    
+                        slack_channel_id=os.environ['SLACK_CHANNEL_ID'],
+                        slack_password=os.environ['SLACK_BOT_TOKEN'])
+
     notifier.run()

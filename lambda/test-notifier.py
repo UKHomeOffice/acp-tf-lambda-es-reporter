@@ -22,7 +22,7 @@ class NotifierTestCase(unittest.TestCase):
                                 check_ec2='TRUE',
                                 period_event_threshold='0',
                                 query_delay_minutes=0,
-                                slack_channel_name = "dummy-channel",
+                                slack_channel_id = "dummy-channel",
                                 slack_password = "testpass"
                                 )
 

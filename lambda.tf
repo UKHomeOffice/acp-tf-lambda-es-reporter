@@ -45,7 +45,7 @@ resource "aws_lambda_function" "lambda" {
       CHECK_EC2              = var.check_ec2
       PERIOD_EVENT_THRESHOLD = var.period_event_threshold
       QUERY_DELAY_MINUTES    = var.query_delay_minutes
-      SLACK_CHANNEL_NAME     = var.slack_channel_name
+      SLACK_CHANNEL_ID       = var.slack_channel_id
       SLACK_BOT_TOKEN        = data.aws_ssm_parameter.slack_password.value
     } 
   }

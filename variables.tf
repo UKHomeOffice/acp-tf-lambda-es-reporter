@@ -70,6 +70,6 @@ variable "tags" {
   
 }
 
-variable "slack_channel_name" {
+variable "slack_channel_id" {
   default = ""
 }
