@@ -10,7 +10,7 @@ locals {
 
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  output_path = "/tmp/lambda_zip_${locals.uuid}.zip"
+  output_path = "/tmp/lambda_zip_${local.uuid}.zip"
   source_dir  = "${path.module}/lambda/"
   depends_on = [
   # Make sure archive is created in apply stage
