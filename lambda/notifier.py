@@ -151,7 +151,7 @@ Slack Channel ID: '{self.slack_channel_id}'
 
     def check_es_issue(self):
 
-        error_header = self.header + f"encountered an exception:\n\n"
+        error_header = self.header + f"encountered an exception:\\n\\n"
 
         events = []
 
@@ -274,9 +274,9 @@ Slack Channel ID: '{self.slack_channel_id}'
                     attr = f"{attribute}: {json.dumps(getattr(event, attribute).to_dict(), sort_keys=True, indent=4)}"
                 else:
                     attr = f"{attribute}: " + str(getattr(event, attribute))
-                formatted_list.append(attr + '\n')
+                formatted_list.append(attr + '\\n')
             formatted_list.sort()
-            formatted_log_entry = f"\n----\nevent {index + 1} of {len(events)}\n"
+            formatted_log_entry = f"\\n----\\nevent {index + 1} of {len(events)}\\n"
             for item in formatted_list:
                 formatted_log_entry += item
             events_formatted.append(formatted_log_entry)
@@ -327,7 +327,7 @@ Slack Channel ID: '{self.slack_channel_id}'
 
             auth = {'Authorization': f"Bearer {self.slack_password}"}
 
-            initial_comment = ':rotating_light: ALERT :rotating_light:\n\n'
+            initial_comment = ':rotating_light: ALERT :rotating_light:\\n\\n'
 
             initial_comment += header
 
@@ -366,7 +366,7 @@ Slack Channel ID: '{self.slack_channel_id}'
 
             if number_of_events >= self.period_event_threshold:
 
-                header = self.header + f"detected {number_of_events} events:\n"
+                header = self.header + f"detected {number_of_events} events:\\n"
 
                 if self.sns_topic_arn:
                     #  SNS messages must be under 256KB, or 262,144 bytes
