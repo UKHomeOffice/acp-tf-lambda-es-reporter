@@ -6,6 +6,10 @@ variable "elasticsearch_password_parameter_name" {
   default = "ssh_notifier_elasticsearch_password"
 }
 
+variable "slack_password_parameter_name" {
+  default = "pod_exec_alert_slack_bot_password"
+}
+
 variable "elasticsearch_username" {
 
 }
@@ -64,4 +68,8 @@ variable query_delay_minutes {
 
 variable "tags" {
   
+}
+
+variable "slack_channel_id" {
+  default = ""
 }

@@ -1,6 +1,6 @@
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  output_path = "/tmp/lambda_zip.zip"
+  output_path = "${path.module}/tmp/lambda_zip.zip"
   source_dir  = "${path.module}/lambda/"
 }
 
@@ -9,9 +9,14 @@ data "aws_ssm_parameter" "elasticsearch_password" {
   with_decryption = true
 }
 
+data "aws_ssm_parameter" "slack_password" {
+  name            = var.slack_password_parameter_name
+  with_decryption = true
+}
+
 resource "aws_lambda_function" "lambda" {
   filename         = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  source_code_hash = filebase64sha256(data.archive_file.lambda_zip.output_path)
 
   function_name = var.function_name
 
@@ -40,7 +45,9 @@ resource "aws_lambda_function" "lambda" {
       CHECK_EC2              = var.check_ec2
       PERIOD_EVENT_THRESHOLD = var.period_event_threshold
       QUERY_DELAY_MINUTES    = var.query_delay_minutes
-    }
+      SLACK_CHANNEL_ID       = var.slack_channel_id
+      SLACK_BOT_TOKEN        = data.aws_ssm_parameter.slack_password.value
+    } 
   }
 
 
