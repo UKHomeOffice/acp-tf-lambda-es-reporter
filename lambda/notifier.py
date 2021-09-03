@@ -255,7 +255,7 @@ Slack Channel ID: '{self.slack_channel_id}'
 
         return matching_logs
 
-    def format_events(self, events):
+    def format_events_for_email(self, events):
 
         if self.check_ec2:
             events.sort(key=operator.itemgetter('hostname', '@timestamp'))
@@ -280,6 +280,23 @@ Slack Channel ID: '{self.slack_channel_id}'
             for item in formatted_list:
                 formatted_log_entry += item
             events_formatted.append(formatted_log_entry)
+
+        return events_formatted
+
+    def format_events_for_slack(self, events):
+
+        if self.check_ec2:
+            events.sort(key=operator.itemgetter('hostname', '@timestamp'))
+        else:
+            list(events).sort(key=operator.itemgetter('@timestamp'))
+
+        logging.info(f"Found {len(events)} qualifying events")
+
+        events_formatted = []
+
+        for index, event in enumerate(events):
+            logging.info(f"Found qualifying event: {event}")
+            events_formatted.append(json.dumps(event.to_dict(), sort_keys=True))
 
         return events_formatted
 
@@ -333,7 +350,7 @@ Slack Channel ID: '{self.slack_channel_id}'
 
             payload = {
                 "channels": f"{self.slack_channel_id}",
-                "filetype": "text",
+                "filetype": "javascript",
                 "initial_comment": initial_comment,
                 "title": 'ELASTICSEARCH EVENT DATA',
                 "file": ("LOG EVENTS", message_as_bytes, 'json')
@@ -357,28 +374,27 @@ Slack Channel ID: '{self.slack_channel_id}'
 
         if ssh_event_logs:
             if self.check_ec2:
-                parsed_logs = self.parse_logs(ssh_event_logs)
-                formatted_events = self.format_events(parsed_logs)
+                qualifying_events = self.parse_logs(ssh_event_logs)
             else:
-                formatted_events = self.format_events(ssh_event_logs)
+                qualifying_events = ssh_event_logs
 
-            number_of_events = len(formatted_events)
+            if len(qualifying_events) >= self.period_event_threshold:
 
-            if number_of_events >= self.period_event_threshold:
-
-                header = self.header + f"detected {number_of_events} events:\n"
+                header = self.header + f"detected {len(qualifying_events)} events:\n"
 
                 if self.sns_topic_arn:
+                    formatted_events_email = self.format_events_for_email(qualifying_events)
                     #  SNS messages must be under 256KB, or 262,144 bytes
                     sns_message_array = self.prepare_messages(header=header,
-                                                              events_formatted=formatted_events,
+                                                              events_formatted=formatted_events_email,
                                                               character_limit=262144)
                     self.trigger_sns(sns_message_array)
 
                 if self.slack_channel_id:
+                    formatted_events_slack = self.format_events_for_slack(qualifying_events)
                     #  Slack file upload API has a 1MB limit
                     slack_message_array = self.prepare_messages(header='',
-                                                                events_formatted=formatted_events,
+                                                                events_formatted=formatted_events_slack,
                                                                 character_limit=1000000)
                     self.trigger_slack(messages=slack_message_array,
                                        header=header)
