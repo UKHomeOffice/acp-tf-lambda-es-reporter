@@ -78,18 +78,18 @@ class Notifier:
         self.header = f"""
 The notifier lambda with the following parameters
 
-ES host: {self.es_host}
-Account: {self.account}
-Region: {self.region}
-Lambda Name: {os.getenv('AWS_LAMBDA_FUNCTION_NAME')}
-Query: '{self.query_string}'
-Query UTC Time Window: {self.previous_timestamp}  ->  {self.current_timestamp}
-Query Delay Minutes: {self.query_delay_minutes}
-Index pattern: '{self.index_pattern}'
-Event Threshold Trigger Count: {self.period_event_threshold}
-Cross-Check Events Against EC2 Toggle: {self.check_ec2}
-EC2 Key, Value tag selector: '{self.tag_selector_key}' : '{self.tag_selector_value}'
-Slack Channel ID: '{self.slack_channel_id}'
+ES host: `{self.es_host}`
+Account: `{self.account}`
+Region: `{self.region}`
+Lambda Name: `{os.getenv('AWS_LAMBDA_FUNCTION_NAME')}`
+Query: `{self.query_string}`
+Query UTC Time Window: `{self.previous_timestamp}  ->  {self.current_timestamp}`
+Query Delay Minutes: `{self.query_delay_minutes}`
+Index pattern: `{self.index_pattern}`
+Event Threshold Trigger Count: `{self.period_event_threshold}`
+Cross-Check Events Against EC2 Toggle: `{self.check_ec2}`
+EC2 Key, Value tag selector: `"{self.tag_selector_key}" : "{self.tag_selector_value}"`
+Slack Channel ID: `{self.slack_channel_id}`
 
 
 
@@ -255,7 +255,7 @@ Slack Channel ID: '{self.slack_channel_id}'
 
         return matching_logs
 
-    def format_events(self, events):
+    def format_events_for_email(self, events):
 
         if self.check_ec2:
             events.sort(key=operator.itemgetter('hostname', '@timestamp'))
@@ -282,6 +282,22 @@ Slack Channel ID: '{self.slack_channel_id}'
             events_formatted.append(formatted_log_entry)
 
         return events_formatted
+
+    def format_events_for_slack(self, events):
+
+        if self.check_ec2:
+            events.sort(key=operator.itemgetter('hostname', '@timestamp'))
+        else:
+            list(events).sort(key=operator.itemgetter('@timestamp'))
+
+        logging.info(f"Found {len(events)} qualifying events")
+
+        list_of_dicts = []
+
+        for event in events:
+            list_of_dicts.append(event.to_dict())
+
+        return list_of_dicts
 
     def prepare_messages(self, header, events_formatted, character_limit):
 
@@ -317,39 +333,39 @@ Slack Channel ID: '{self.slack_channel_id}'
 
         http = urllib3.PoolManager()
 
-        for index, message in enumerate(messages):
-            logging.info(
-                f"Publishing message {index+1} of {len(messages)} to Slack channel {self.slack_channel_id}")
-            logging.debug(f"Message {index+1} = {len(message.encode('utf-8'))} characters")
-            logging.debug(f"Message {index+1} content: {message}")
+        message_as_bytes = json.dumps(messages, sort_keys=True, indent=2).encode('utf-8')
 
-            message_as_bytes = json.dumps(message).encode('utf-8')
+        if len(message_as_bytes) > 1000000:
+            message = {"error":
+                "Event content exceeds Slack limit of 1MB - please check Kibana for events which match the query above"}
 
-            auth = {'Authorization': f"Bearer {self.slack_password}"}
+            message_as_bytes = json.dumps(message, sort_keys=True, indent=2).encode('utf-8')
 
-            initial_comment = ':rotating_light: ALERT :rotating_light:\n\n'
+        auth = {'Authorization': f"Bearer {self.slack_password}"}
 
-            initial_comment += header
+        initial_comment = ':rotating_light: ALERT :rotating_light:\n\n'
 
-            payload = {
-                "channels": f"{self.slack_channel_id}",
-                "filetype": "text",
-                "initial_comment": initial_comment,
-                "title": 'ELASTICSEARCH EVENT DATA',
-                "file": ("LOG EVENTS", message_as_bytes, 'json')
-            }
+        initial_comment += header
 
-            req = http.request('POST',
-                               'https://slack.com/api/files.upload',
-                               headers=auth,
-                               fields=payload)
+        payload = {
+            "channels": f"{self.slack_channel_id}",
+            "filetype": "javascript",
+            "initial_comment": initial_comment,
+            "title": 'ELASTICSEARCH EVENT DATA',
+            "file": ("LOG EVENTS", message_as_bytes, 'json')
+        }
 
-            response_body = json.loads(req.data)
+        req = http.request('POST',
+                           'https://slack.com/api/files.upload',
+                           headers=auth,
+                           fields=payload)
 
-            if req.status != 200 and response_body['ok'] is not True:
-                logging.error(f"Slack returned code {req.status} and response: {response_body}")
-            else:
-                logging.info(f"Uploaded file to {self.slack_channel_id} channel for message: {index+1}")
+        response_body = json.loads(req.data)
+
+        if req.status != 200 and response_body['ok'] is not True:
+            logging.error(f"Slack returned code {req.status} and response: {response_body}")
+        else:
+            logging.info(f"Uploaded file to {self.slack_channel_id} channel")
 
     def run(self):
 
@@ -357,30 +373,25 @@ Slack Channel ID: '{self.slack_channel_id}'
 
         if ssh_event_logs:
             if self.check_ec2:
-                parsed_logs = self.parse_logs(ssh_event_logs)
-                formatted_events = self.format_events(parsed_logs)
+                qualifying_events = self.parse_logs(ssh_event_logs)
             else:
-                formatted_events = self.format_events(ssh_event_logs)
+                qualifying_events = ssh_event_logs
 
-            number_of_events = len(formatted_events)
+            if len(qualifying_events) >= self.period_event_threshold:
 
-            if number_of_events >= self.period_event_threshold:
-
-                header = self.header + f"detected {number_of_events} events:\n"
+                header = self.header + f"detected {len(qualifying_events)} events:\n"
 
                 if self.sns_topic_arn:
+                    formatted_events_email = self.format_events_for_email(qualifying_events)
                     #  SNS messages must be under 256KB, or 262,144 bytes
                     sns_message_array = self.prepare_messages(header=header,
-                                                              events_formatted=formatted_events,
+                                                              events_formatted=formatted_events_email,
                                                               character_limit=262144)
                     self.trigger_sns(sns_message_array)
 
                 if self.slack_channel_id:
-                    #  Slack file upload API has a 1MB limit
-                    slack_message_array = self.prepare_messages(header='',
-                                                                events_formatted=formatted_events,
-                                                                character_limit=1000000)
-                    self.trigger_slack(messages=slack_message_array,
+                    formatted_events_slack = self.format_events_for_slack(qualifying_events)
+                    self.trigger_slack(messages=formatted_events_slack,
                                        header=header)
 
 

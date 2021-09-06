@@ -24,7 +24,7 @@ resource "aws_lambda_function" "lambda" {
 
   runtime = "python3.8"
 
-  memory_size = 256
+  memory_size = 512
 
   role = aws_iam_role.lambda_role.arn
 
