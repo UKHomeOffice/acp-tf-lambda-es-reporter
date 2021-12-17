@@ -362,10 +362,10 @@ Slack Channel ID: `{self.slack_channel_id}`
 
         response_body = json.loads(req.data)
 
-        if req.status != 200 and response_body['ok'] is not True:
-            logging.error(f"Slack returned code {req.status} and response: {response_body}")
-        else:
+        if req.status == 200 and response_body['ok']:
             logging.info(f"Uploaded file to {self.slack_channel_id} channel")
+        else:
+            logging.error(f"Slack returned code {req.status} and response: {response_body}")
 
     def run(self):
 
