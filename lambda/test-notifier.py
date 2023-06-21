@@ -87,6 +87,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
     @mock.patch('notifier.Notifier.get_logs')
     @mock.patch('notifier.Notifier.trigger_sns')
     @mock.patch('notifier.Notifier.put_current_timestamp')
+    @mock.patch.object(Notifier.check_es_issue, '__defaults__', (1,1))
     def test_connection_error(self,
                             mock_put_current_timestamp,
                             mock_trigger_sns,
@@ -97,7 +98,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
 
         mock_get_logs.side_effect = socket.timeout('exception')
 
-        message = f"Connection error for host {self.notifier.es_host} - exception"
+        message = f"Exception timeout encountered during query of {self.notifier.es_host} - exception"
 
         self.notifier.check_es_issue()
 
@@ -108,6 +109,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
     @mock.patch('elasticsearch.Elasticsearch.search')
     @mock.patch('notifier.Notifier.get_logs')
     @mock.patch('notifier.Notifier.put_current_timestamp')
+    @mock.patch.object(Notifier.check_es_issue, '__defaults__', (1,1))
     def test_events_returned(self,
                             mock_put_current_timestamp,
                             mock_get_logs,
@@ -138,6 +140,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
     @mock.patch('notifier.Notifier.trigger_sns')
     @mock.patch('boto3.Session.client')
     @mock.patch('elasticsearch_dsl.Search.execute')
+    @mock.patch.object(Notifier.check_es_issue, '__defaults__', (1,1))
     def test_when_threshold_set_and_met(self,
                                     mock_es_search,
                                     mock_ec2_client_ctor,
@@ -157,6 +160,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
     @mock.patch('notifier.Notifier.prepare_messages')
     @mock.patch('boto3.Session.client')
     @mock.patch('elasticsearch_dsl.Search.execute')
+    @mock.patch.object(Notifier.check_es_issue, '__defaults__', (1,1))
     def test_when_threshold_set_and_not_met(self,
                                     mock_es_search,
                                     mock_ec2_client_ctor,
@@ -176,6 +180,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
     @mock.patch('notifier.Notifier.trigger_sns')
     @mock.patch('boto3.Session.client')
     @mock.patch('elasticsearch_dsl.Search.execute')
+    @mock.patch.object(Notifier.check_es_issue, '__defaults__', (1,1))
     def test_when_threshold_not_set(self,
                                     mock_es_search,
                                     mock_ec2_client_ctor,
@@ -195,6 +200,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
     @mock.patch('notifier.Notifier.trigger_sns')
     @mock.patch('boto3.Session.client')
     @mock.patch('elasticsearch_dsl.Search.execute')
+    @mock.patch.object(Notifier.check_es_issue, '__defaults__', (1,1))
     def test_when_ec2_instance_check_set(self,
                                     mock_es_search,
                                     mock_ec2_client_ctor,
@@ -214,6 +220,7 @@ class TestNotifierCheckESIssue(NotifierTestCase):
     @mock.patch('notifier.Notifier.trigger_sns')
     @mock.patch('boto3.Session.client')
     @mock.patch('elasticsearch_dsl.Search.execute')
+    @mock.patch.object(Notifier.check_es_issue, '__defaults__', (1,1))
     def test_when_ec2_instance_check_not_set(self,
                                     mock_es_search,
                                     mock_ec2_client_ctor,
