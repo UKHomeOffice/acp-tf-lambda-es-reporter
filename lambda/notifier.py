@@ -14,6 +14,7 @@ import socket
 import urllib3
 from urllib3.exceptions import HTTPError
 import json
+import time
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -149,29 +150,22 @@ Slack Channel ID: `{self.slack_channel_id}`
 
         return response
 
-    def check_es_issue(self):
-
+    def check_es_issue(self, retry_sleep=10, retry_max=10):
         error_header = self.header + f"encountered an exception:\n\n"
 
         events = []
 
-        try:
-            events = self.get_logs(gt=self.previous_timestamp, lte=self.current_timestamp)
-        except (socket.timeout, socket.gaierror, HTTPError, ElasticConnectionError) as e:
-            message = f"Connection error for host {self.es_host} - {e}"
-            logging.error(message)
-            self.trigger_sns([error_header + message])
-            return
-        except ElasticsearchException as e:
-            message = f"Application-level exception returned by {self.es_host} - {e}"
-            logging.error(message)
-            self.trigger_sns([error_header + message])
-            return
-        except Exception as e:
-            message = f"Exception encountered during query of {self.es_host} - {e}"
-            logging.error(message)
-            self.trigger_sns([error_header + message])
-            return
+        for retry_count in range(retry_max):
+            try:
+                events = self.get_logs(gt=self.previous_timestamp, lte=self.current_timestamp)
+                break
+            except Exception as e:
+                if retry_count >= retry_max - 1:
+                    message = f"Exception {e.__class__.__name__ } encountered during query of {self.es_host} - {e}"
+                    logging.error(message)
+                    self.trigger_sns([error_header + message])
+                    return
+                time.sleep(retry_sleep)
 
         self.put_current_timestamp(self.ssm_client, self.current_timestamp)
 
